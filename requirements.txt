@@ -1,3 +1,4 @@
 html2text
 beautifulsoup4
+requests
 git+git://github.com/AWConant/jikanpy.git

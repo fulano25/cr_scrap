@@ -31,7 +31,7 @@ LANGUAGES = {
 }
 
 SITE = 'https://www.crunchyroll.com'
-LANGUAGE = 'english_us'
+LANGUAGE = 'portuguese_br'
 LANG = LANGUAGES[LANGUAGE]
 CSV_FILE = 'anime_list_' + LANGUAGE + '.csv'
 
@@ -100,12 +100,14 @@ if __name__ == "__main__":
     
     cr_list = CRList(page.content)
 
-    loop = asyncio.get_event_loop()
-    client = AioJikan(loop=loop)
+    print(cr_list.items)
 
-    for anime in cr_list.items:
-        asyncio.ensure_future(fetch_anime(anime, client))
+    # loop = asyncio.get_event_loop()
+    # client = AioJikan(loop=loop)
 
-    loop.run_forever()
+    # for anime in cr_list.items:
+    #     asyncio.ensure_future(fetch_anime(anime, client))
+
+    # loop.run_forever()
 
 
