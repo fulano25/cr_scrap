@@ -3,11 +3,13 @@ import csv
 import os
 import re
 import requests
+import aiohttp
 from urllib.parse import urljoin
 
 import html2text
 from bs4 import BeautifulSoup
 from jikanpy import AioJikan
+import time
 
 
 """
@@ -72,7 +74,7 @@ def _md_to_tuple(a):
     c, d = b
     return d[0:-3], c
 
-async def fetch_anime(anime, client):
+async def fetch_anime_(anime, client):
     cr_title, cr_url = anime
     search_result = await client.search(search_type='anime', query=cr_title)
     search_result_id = search_result['results'][0]['mal_id']
@@ -87,6 +89,36 @@ async def fetch_anime(anime, client):
         csv_out.writerow(entry)
     print(entry[0])
 
+async def fetch_anime(client, anime):
+    cr_title, cr_url = anime
+    search_result = None
+    try:
+        search_result = await client.search(search_type='anime', query=cr_title)
+        search_result_id = search_result['results'][0]['mal_id']
+        mal_anime = await client.anime(search_result_id)
+        mal_title = mal_anime['title']
+        mal_url = mal_anime['url']
+        mal_genres = [genre['name'] for genre in mal_anime['genres']]
+        entry = (cr_title, cr_url, mal_title, mal_url, mal_genres)
+        print(entry)
+        with open(CSV_FILE, 'a', encoding='utf-8', newline='') as output:
+            csv_out = csv.writer(output, delimiter=';')
+            csv_out.writerow(entry)
+    except Exception as e:
+        entry = (cr_title, e)
+        print(entry)
+        with open(CSV_FILE, 'a', encoding='utf-8', newline='') as output:
+            csv_out = csv.writer(output, delimiter=';')
+            csv_out.writerow(entry)
+
+async def main(client):
+    task_list = [] 
+    for anime in cr_list:
+        task_list.append(loop.create_task(fetch_anime(client, anime)))
+    
+    await asyncio.wait(task_list)
+    await client.close()
+
 
 if __name__ == "__main__":
     filePath = CSV_FILE
@@ -97,17 +129,20 @@ if __name__ == "__main__":
         page = CRListRequest()
     except Exception as e:
         print(e)
-    
-    cr_list = CRList(page.content)
 
-    print(cr_list.items)
+    cr_list = CRList(page.content).items
+    print(cr_list)
 
-    # loop = asyncio.get_event_loop()
-    # client = AioJikan(loop=loop)
+    loop = asyncio.get_event_loop()
 
-    # for anime in cr_list.items:
-    #     asyncio.ensure_future(fetch_anime(anime, client))
+    connector = aiohttp.TCPConnector(limit=1)
+    session = aiohttp.ClientSession(loop=loop, connector=connector)
+    aio_jikan = AioJikan(session=session)
 
-    # loop.run_forever()
+    try:
+        loop.run_until_complete(main(aio_jikan))
+    except Exception as e:
+        print(e)
+    loop.close()
 
 
