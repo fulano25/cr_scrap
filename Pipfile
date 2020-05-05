@@ -9,7 +9,6 @@ verify_ssl = true
 html2text = "*"
 beautifulsoup4 = "*"
 requests = "*"
-jikanpy = { git = 'https://github.com/AWConant/jikanpy.git'}
 
 [requires]
 python_version = "3.7"

@@ -1,16 +1,10 @@
-import asyncio
 import csv
 import os
 import re
 import requests
-import aiohttp
-from urllib.parse import urljoin
 
 import html2text
 from bs4 import BeautifulSoup
-from jikanpy import AioJikan
-import time
-
 
 """
 Creates a list with all Crunchyroll anime titles and genres, 
@@ -37,12 +31,14 @@ LANGUAGE = 'portuguese_br'
 LANG = LANGUAGES[LANGUAGE]
 CSV_FILE = 'anime_list_' + LANGUAGE + '.csv'
 
+MYANIMELIST_BASE = 'https://myanimelist.net/'
+
 class CRListRequest:
     def __init__(self):
         page_url = urljoin(SITE, LANG + '/videos/anime/alpha?group=all')
         r = requests.get(page_url)
-        self.code = r.status_code
-        if self.code != 200:
+        self.status = r.status_code
+        if self.status != 200:
             raise Exception(str(r.status_code) + 'Error')
         self.content = r.content
 
@@ -56,6 +52,62 @@ class CRList:
         self.items = [_md_to_tuple(i) for i in self.items_md]
 
 
+class MyAnimeListScraper:
+    URL_TYPES = {
+        'search': '/anime.php?q=',
+        'anime': 'anime/'
+    }
+
+    def __init__(self):
+        self.status = None
+        self.content = None
+
+    def _get(self, url):
+        r = requests.get(url)
+        self.status = r.status_code
+        if self.status != 200:
+            raise Exception(str(r.status_code) + 'Error')
+        self.content = r.content
+
+    def get_url(self, url_type, value):
+        url = MYANIMELIST_BASE + self.URL_TYPES[url_type] + value
+        self._get(url)
+
+
+    def search(self, anime_title):
+        self.get_url('search', anime_title)
+        soup = BeautifulSoup(self.content, 'html.parser')
+        link = soup.find('a', {'class': 'hoverinfo_trigger'})
+        # TODO: Finish this scraper
+
+
+    def find(self, anime_title):
+        self.get_url('search', anime_title)
+        search_soup = BeautifulSoup(self.content, 'html.parser')
+        link = search_soup.find('a', {'class': 'hoverinfo_trigger'})
+        mal_url = link['href']
+        self._get(mal_url)
+        anime_page_soup = BeautifulSoup(self.content, 'html.parser')
+        sidebar = anime_page_soup.find('td', {'class': 'borderClass'})
+        sidebar_div = sidebar.find('div')
+        for span in sidebar_div.findAll('span', {'itemprop':'genre'}): 
+            span.decompose()
+        markdown_info = _html_to_markdown(sidebar_div, ignore_links=True)
+        markdown_info_list = [i.strip() for i in markdown_info.split('\n\n')]
+
+        anime_info = {'MyAnimeList URL': mal_url}
+        for info in markdown_info_list:
+            pair = info.split(': ', 1)
+            if len(pair) == 2:
+                key, value = pair
+                anime_info[key] = value
+        return anime_info
+
+    def anime(self, anime_id):
+        self.get_url('anime', anime_id)
+        soup = BeautifulSoup(self.content, 'html.parser')
+        # TODO: Finish this scraper
+
 def _html_to_markdown(value, baseurl=None, ignore_links=False):
     h = html2text.HTML2Text()
     h.ignore_links = ignore_links
@@ -64,52 +116,12 @@ def _html_to_markdown(value, baseurl=None, ignore_links=False):
     return h.handle(str(value))
 
 def _md_to_tuple(a):
-    """
-    Gambiarra pra transformar os links em markdown que são gerados nesse
-    projeto em um tuple contendo a mensagem que aparece quando aponta o
-    mouse e o link respectivamente
-    """
     b = re.split('\]\(', a, 1)
     b = re.split('\s\"', b[1], 1)
     c, d = b
-    return d[0:-3], c
 
-async def fetch_anime_(anime, client):
-    cr_title, cr_url = anime
-    search_result = await client.search(search_type='anime', query=cr_title)
-    search_result_id = search_result['results'][0]['mal_id']
-    mal_anime = await client.anime(search_result_id)
-    # print(mal_anime)
-    mal_title = mal_anime['title']
-    mal_url = mal_anime['url']
-    mal_genres = [genre['name'] for genre in mal_anime['genres']]
-    entry = (cr_title, cr_url, mal_title, mal_url, mal_genres)
-    with open(CSV_FILE, 'a', encoding='utf-8', newline='') as output:
-        csv_out = csv.writer(output, delimiter=';')
-        csv_out.writerow(entry)
-    print(entry[0])
-
-async def fetch_anime(client, anime):
-    cr_title, cr_url = anime
-    search_result = None
-    try:
-        search_result = await client.search(search_type='anime', query=cr_title)
-        search_result_id = search_result['results'][0]['mal_id']
-        mal_anime = await client.anime(search_result_id)
-        mal_title = mal_anime['title']
-        mal_url = mal_anime['url']
-        mal_genres = [genre['name'] for genre in mal_anime['genres']]
-        entry = (cr_title, cr_url, mal_title, mal_url, mal_genres)
-        print(entry)
-        with open(CSV_FILE, 'a', encoding='utf-8', newline='') as output:
-            csv_out = csv.writer(output, delimiter=';')
-            csv_out.writerow(entry)
-    except Exception as e:
-        entry = (cr_title, e)
-        print(entry)
-        with open(CSV_FILE, 'a', encoding='utf-8', newline='') as output:
-            csv_out = csv.writer(output, delimiter=';')
-            csv_out.writerow(entry)
+    search_friendly_name = d.split('/')[-1].replace('-', ' ')
+    return d[0:-3], c, search_friendly_name
 
 async def main(client):
     task_list = [] 
@@ -131,18 +143,16 @@ if __name__ == "__main__":
         print(e)
 
     cr_list = CRList(page.content).items
-    print(cr_list)
-
-    loop = asyncio.get_event_loop()
-
-    connector = aiohttp.TCPConnector(limit=1)
-    session = aiohttp.ClientSession(loop=loop, connector=connector)
-    aio_jikan = AioJikan(session=session)
-
-    try:
-        loop.run_until_complete(main(aio_jikan))
-    except Exception as e:
-        print(e)
-    loop.close()
-
-
+    
+    for anime in cr_list:
+        try:
+            mal_scraper = MyAnimeListScraper()
+            anime_found = mal_scraper.find(anime[2])
+            entry = (anime[0], anime[1], anime_found['English'], anime_found['MyAnimeList URL'], anime_found['Japanese'], anime_found['Genres'])
+            print(entry)
+            with open(CSV_FILE, 'a', encoding='utf-8', newline='') as output:
+                csv_out = csv.writer(output, delimiter=';')
+                csv_out.writerow(entry)
+            
+        except Exception as e:
+            print(e)
