@@ -2,6 +2,7 @@ import csv
 import os
 import re
 import requests
+from urllib.parse import urljoin
 
 import html2text
 from bs4 import BeautifulSoup
